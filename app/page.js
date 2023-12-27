@@ -1,113 +1,323 @@
-import Image from 'next/image'
+"use client";
+import {
+  BoltIcon,
+  BoltSlashIcon,
+  BriefcaseIcon,
+  CogIcon,
+  PhotoIcon,
+} from "@heroicons/react/24/outline";
+import { useSession } from "next-auth/react";
+import { useEffect, useRef, useState } from "react";
+import {
+  addDoc,
+  collection,
+  getDocs,
+  onSnapshot,
+  orderBy,
+  query,
+  serverTimestamp,
+} from "firebase/firestore";
+import { db, storage } from "@/firebase";
+import { useRouter } from "next/navigation";
+import { Spinner } from "@nextui-org/react";
+import PostElement from "@/components/postElement/PostElement";
+import Image from "next/image";
+import LeftSection from "@/components/sharedSections/LeftSection";
+import { activeNavLinkAtom } from "./store";
+import { useRecoilState } from "recoil";
+import MiddleSection from "@/components/sharedSections/MiddleSection";
+import { ref, uploadBytes, getDownloadURL } from "firebase/storage";
+import { sendToOpenAI } from "@/actions/sendToOpenAI";
+
+export const navLinks = [
+  {
+    id: 0,
+    title: "home",
+    link: "/home",
+    icon: <CogIcon className="h-8 w-8 stroke-white" />,
+  },
+  {
+    id: 1,
+    title: "explore",
+    link: "/explore",
+    icon: <CogIcon className="h-8 w-8 stroke-white" />,
+  },
+  {
+    id: 2,
+    title: "notifications",
+    link: "/notifications",
+    icon: <CogIcon className="h-8 w-8 stroke-white" />,
+  },
+  {
+    id: 3,
+    title: "messages",
+    link: "/messages",
+    icon: <BriefcaseIcon className="h-8 w-8 stroke-white" />,
+  },
+  {
+    id: 4,
+    title: "lists",
+    link: "/lists",
+    icon: <CogIcon className="h-8 w-8 stroke-white" />,
+  },
+  {
+    id: 5,
+    title: "communities",
+    link: "/communities",
+    icon: <CogIcon className="h-8 w-8 stroke-white" />,
+  },
+  {
+    id: 6,
+    title: "verified Orgs",
+    link: "/verified-Orgs",
+    icon: <CogIcon className="h-8 w-8 stroke-white" />,
+  },
+  {
+    id: 7,
+    title: "profile",
+    link: "/profile",
+    icon: <CogIcon className="h-8 w-8 stroke-white" />,
+  },
+  {
+    id: 8,
+    title: "more",
+    link: "/more",
+    icon: <CogIcon className="h-8 w-8 stroke-white" />,
+  },
+];
 
 export default function Home() {
+  const [activeNavLink, setActiveNavLink] = useRecoilState(activeNavLinkAtom);
+  const [activeTab, setactiveTab] = useState(0);
+  const inputRef = useRef(null);
+
+  const [activateAI, setActivateAI] = useState(false);
+  const [prompt, setPrompt] = useState("");
+
+  const { data: session } = useSession();
+  const router = useRouter();
+
+  // handling the tweet input
+
+  const [post, setPost] = useState("");
+  const [loading, setLoading] = useState(false);
+
+  // upload media to the post
+  const [selectedImage, setSelectedImage] = useState({ image: "", url: "" });
+  const handleMediaUpload = async (e) => {
+    const imageUrl = URL.createObjectURL(e.target.files[0]);
+    setSelectedImage({ image: e.target.files[0], url: imageUrl });
+  };
+
+  const addPost = async () => {
+    if (post.trim() == "") return;
+    if (!session) {
+      router.push("/auth/signin");
+    } else {
+      setLoading(true);
+      if (selectedImage.image) {
+        // uploading the image to firebase storage
+        const filename = `${session?.user?.email}_${Date.now()}_${
+          selectedImage.image.name
+        }`;
+        const storageRef = ref(storage, filename);
+        await uploadBytes(storageRef, selectedImage.image);
+        // after uploading we get the url
+        const imageUrl = await getDownloadURL(storageRef);
+        await addDoc(collection(db, "posts"), {
+          content: post,
+          timestamp: serverTimestamp(),
+          author: {
+            name: session?.user?.name,
+            email: session?.user?.email,
+            image: session?.user?.image,
+            username: session?.user?.name,
+          },
+          media: [imageUrl],
+        });
+      } else {
+        await addDoc(collection(db, "posts"), {
+          content: post,
+          timestamp: serverTimestamp(),
+          author: {
+            name: session?.user?.name,
+            email: session?.user?.email,
+            image: session?.user?.image,
+            username: session?.user?.name,
+          },
+        });
+      }
+      setLoading(false);
+      setPost("");
+      setSelectedImage({ image: "", url: "" });
+    }
+  };
+
+  const [posts, setPosts] = useState([]);
+
+  // retreive posts
+  useEffect(() => {
+    onSnapshot(
+      query(collection(db, "posts"), orderBy("timestamp", "desc")),
+      (snapshot) => {
+        if (snapshot.docs.length > 0) {
+          setPosts(snapshot.docs);
+        } else {
+          setPosts([]);
+        }
+      }
+    );
+  }, []);
+
+  // handling the ai feature
+  const [loadingToAi, setLoadingToAi] = useState(false);
+  const handleAIClick = async () => {
+    setActivateAI((curr) => !curr);
+  };
+  const sendPrompt = async () => {
+    if (prompt.trim() == "") return;
+    setLoadingToAi(true);
+    const result = await sendToOpenAI(prompt);
+    setActivateAI(false);
+    setPost(result);
+    setLoadingToAi(false);
+  };
+
   return (
-    <main className="flex min-h-screen flex-col items-center justify-between p-24">
-      <div className="z-10 max-w-5xl w-full items-center justify-between font-mono text-sm lg:flex">
-        <p className="fixed left-0 top-0 flex w-full justify-center border-b border-gray-300 bg-gradient-to-b from-zinc-200 pb-6 pt-8 backdrop-blur-2xl dark:border-neutral-800 dark:bg-zinc-800/30 dark:from-inherit lg:static lg:w-auto  lg:rounded-xl lg:border lg:bg-gray-200 lg:p-4 lg:dark:bg-zinc-800/30">
-          Get started by editing&nbsp;
-          <code className="font-mono font-bold">app/page.js</code>
-        </p>
-        <div className="fixed bottom-0 left-0 flex h-48 w-full items-end justify-center bg-gradient-to-t from-white via-white dark:from-black dark:via-black lg:static lg:h-auto lg:w-auto lg:bg-none">
-          <a
-            className="pointer-events-none flex place-items-center gap-2 p-8 lg:pointer-events-auto lg:p-0"
-            href="https://vercel.com?utm_source=create-next-app&utm_medium=appdir-template&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
+    <main className="main-body relative">
+      {/* left */}
+      <LeftSection />
+      {/* middle */}
+      <MiddleSection>
+        <h2 className="text-white text-lg md:text-xl px-4 font-bold py-6">
+          {activeNavLink}
+        </h2>
+        <div
+          className="items-center justify-center flex z-50
+           bg-black backdrop-blur-md bg-opacity-20 border-b border-[#161616]
+          space-x-4 w-full text-white text-lg sticky top-0"
+        >
+          <span
+            onClick={() => setactiveTab(0)}
+            className={`${activeTab === 0 ? "active-tab" : "tab"}`}
           >
-            By{' '}
-            <Image
-              src="/vercel.svg"
-              alt="Vercel Logo"
-              className="dark:invert"
-              width={100}
-              height={24}
-              priority
-            />
-          </a>
+            For You
+          </span>
+          <span
+            onClick={() => setactiveTab(1)}
+            className={`${activeTab === 1 ? "active-tab" : "tab"}`}
+          >
+            Following
+          </span>
         </div>
-      </div>
-
-      <div className="relative flex place-items-center before:absolute before:h-[300px] before:w-[480px] before:-translate-x-1/2 before:rounded-full before:bg-gradient-radial before:from-white before:to-transparent before:blur-2xl before:content-[''] after:absolute after:-z-20 after:h-[180px] after:w-[240px] after:translate-x-1/3 after:bg-gradient-conic after:from-sky-200 after:via-blue-200 after:blur-2xl after:content-[''] before:dark:bg-gradient-to-br before:dark:from-transparent before:dark:to-blue-700 before:dark:opacity-10 after:dark:from-sky-900 after:dark:via-[#0141ff] after:dark:opacity-40 before:lg:h-[360px] z-[-1]">
-        <Image
-          className="relative dark:drop-shadow-[0_0_0.3rem_#ffffff70] dark:invert"
-          src="/next.svg"
-          alt="Next.js Logo"
-          width={180}
-          height={37}
-          priority
-        />
-      </div>
-
-      <div className="mb-32 grid text-center lg:max-w-5xl lg:w-full lg:mb-0 lg:grid-cols-4 lg:text-left">
-        <a
-          href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template&utm_campaign=create-next-app"
-          className="group rounded-lg border border-transparent px-5 py-4 transition-colors hover:border-gray-300 hover:bg-gray-100 hover:dark:border-neutral-700 hover:dark:bg-neutral-800/30"
-          target="_blank"
-          rel="noopener noreferrer"
+        {/* the input */}
+        <div
+          className="border-y border-[#161616] py-2 w-full relative
+         items-center justify-center flex flex-col"
         >
-          <h2 className={`mb-3 text-2xl font-semibold`}>
-            Docs{' '}
-            <span className="inline-block transition-transform group-hover:translate-x-1 motion-reduce:transform-none">
-              -&gt;
-            </span>
-          </h2>
-          <p className={`m-0 max-w-[30ch] text-sm opacity-50`}>
-            Find in-depth information about Next.js features and API.
-          </p>
-        </a>
+          {/* AI */}
+          <button
+            onClick={handleAIClick}
+            className="text-white absolute top-2 right-2 z-50"
+          >
+            <BoltIcon className="stroke-yellow-500 animate-pulse h-6 w-6" />
+          </button>
 
-        <a
-          href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-          className="group rounded-lg border border-transparent px-5 py-4 transition-colors hover:border-gray-300 hover:bg-gray-100 hover:dark:border-neutral-700 hover:dark:bg-neutral-800 hover:dark:bg-opacity-30"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <h2 className={`mb-3 text-2xl font-semibold`}>
-            Learn{' '}
-            <span className="inline-block transition-transform group-hover:translate-x-1 motion-reduce:transform-none">
-              -&gt;
-            </span>
-          </h2>
-          <p className={`m-0 max-w-[30ch] text-sm opacity-50`}>
-            Learn about Next.js in an interactive course with&nbsp;quizzes!
-          </p>
-        </a>
+          {activateAI ? (
+            <div
+              className="w-[90%] py-4 rounded-lg bg-[#111111] 
+            items-center justify-center flex mb-4 relative"
+            >
+              {loadingToAi ? (
+                <Image
+                  src="/loading.webp"
+                  alt="loading"
+                  height={100}
+                  width={100}
+                />
+              ) : (
+                <>
+                  <textarea
+                    type="text"
+                    value={prompt}
+                    onChange={(e) => setPrompt(e.target.value)}
+                    placeholder="write ..."
+                    className="w-[90%] text-lg lg:text-xl py-6 
+                    px-4 bg-transparent text-white 
+                     placeholder:text-white/40 
+                         outline-none"
+                  />
+                  <button
+                    onClick={sendPrompt}
+                    className="text-white absolute bottom-0 right-0 px-4 py-1
+                    border border-white bg-black 
+                    smooth hover:bg-white hover:text-black rounded-full"
+                  >
+                    send
+                  </button>
+                </>
+              )}
+            </div>
+          ) : (
+            <textarea
+              type="text"
+              value={post}
+              onChange={(e) => setPost(e.target.value)}
+              placeholder="What is happening ?"
+              className="w-[90%] text-lg lg:text-xl py-6 px-4
+               bg-transparent text-white min-h-[20vh]
+            placeholder:text-white/40 outline-none"
+            />
+          )}
+          {selectedImage.image && (
+            <div
+              className="px-5 py-2 rounded-xl w-full
+            items-center justify-center"
+            >
+              <Image
+                src={selectedImage.url}
+                alt={selectedImage.image.name}
+                height={500}
+                width={500}
+                className="self-center"
+              />
+            </div>
+          )}
 
-        <a
-          href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template&utm_campaign=create-next-app"
-          className="group rounded-lg border border-transparent px-5 py-4 transition-colors hover:border-gray-300 hover:bg-gray-100 hover:dark:border-neutral-700 hover:dark:bg-neutral-800/30"
-          target="_blank"
-          rel="noopener noreferrer"
+          {!activateAI && (
+            <div className="items-center justify-between w-full flex px-4">
+              {/* image input where we can upload media to post */}
+              <span
+                onClick={() => inputRef.current.click()}
+                className="items-center justify-center flex"
+              >
+                <PhotoIcon className="h-6 w-6 cursor-pointer stroke-white" />
+              </span>
+              {/* hidden input for uploading the media */}
+              <input
+                hidden
+                ref={inputRef}
+                type="file"
+                onChange={handleMediaUpload}
+              />
+              <button onClick={addPost} className="post-button md:w-[6vw] py-2">
+                {loading ? <Spinner color="success" /> : "post"}
+              </button>
+            </div>
+          )}
+        </div>
+        {/* list posts/tweets */}
+        <div
+          className="w-full item-start justify-start
+         flex flex-col pb-10"
         >
-          <h2 className={`mb-3 text-2xl font-semibold`}>
-            Templates{' '}
-            <span className="inline-block transition-transform group-hover:translate-x-1 motion-reduce:transform-none">
-              -&gt;
-            </span>
-          </h2>
-          <p className={`m-0 max-w-[30ch] text-sm opacity-50`}>
-            Explore the Next.js 13 playground.
-          </p>
-        </a>
-
-        <a
-          href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template&utm_campaign=create-next-app"
-          className="group rounded-lg border border-transparent px-5 py-4 transition-colors hover:border-gray-300 hover:bg-gray-100 hover:dark:border-neutral-700 hover:dark:bg-neutral-800/30"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <h2 className={`mb-3 text-2xl font-semibold`}>
-            Deploy{' '}
-            <span className="inline-block transition-transform group-hover:translate-x-1 motion-reduce:transform-none">
-              -&gt;
-            </span>
-          </h2>
-          <p className={`m-0 max-w-[30ch] text-sm opacity-50`}>
-            Instantly deploy your Next.js site to a shareable URL with Vercel.
-          </p>
-        </a>
-      </div>
+          {posts.map((post) => (
+            <PostElement key={post.id} docId={post.id} data={post.data()} />
+          ))}
+        </div>
+      </MiddleSection>
+      {/* right */}
+      <div className="md:col-span-1 hidden md:flex"></div>
     </main>
-  )
+  );
 }
